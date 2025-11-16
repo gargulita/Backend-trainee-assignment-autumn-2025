@@ -221,3 +221,124 @@ func containsString(list []string, target string) bool {
     }
     return false
 }
+
+func (s *Service) GetStats(ctx context.Context) (*domain.Stats, error) {
+    return s.store.GetStats(ctx)
+}
+
+func (s *Service) DeactivateTeamUsersAndReassignOpenPRs(ctx context.Context, teamName string) (*DeactivateTeamResult, error) {
+    if teamName == "" {
+        return nil, NewAppError(ErrorCodeBadRequest, "team_name is required")
+    }
+
+    if !s.store.TeamExists(ctx, teamName) {
+        return nil, NewAppError(ErrorCodeNotFound, "team not found")
+    }
+
+    members, ok := s.store.ListUsersByTeam(ctx, teamName)
+    if !ok {
+        return nil, NewAppError(ErrorCodeNotFound, "team not found")
+    }
+
+    deactivatedIDs := make([]string, 0, len(members))
+    for _, u := range members {
+        if u == nil || !u.IsActive {
+            continue
+        }
+        updated, ok := s.store.SetUserIsActive(ctx, u.ID, false)
+        if ok && !updated.IsActive {
+            deactivatedIDs = append(deactivatedIDs, u.ID)
+        }
+    }
+
+    if len(deactivatedIDs) == 0 {
+        return &DeactivateTeamResult{
+            TeamName:              teamName,
+            DeactivatedUserIDs:    deactivatedIDs,
+            UpdatedPullRequestIDs: nil,
+        }, nil
+    }
+
+    deactivatedSet := make(map[string]struct{}, len(deactivatedIDs))
+    for _, id := range deactivatedIDs {
+        deactivatedSet[id] = struct{}{}
+    }
+
+    allPRs := s.store.ListPullRequests(ctx)
+    updatedPRIDs := make([]string, 0)
+
+    for _, pr := range allPRs {
+        if pr == nil || pr.Status != domain.StatusOpen {
+            continue
+        }
+
+        hadDeactivated := false
+        newReviewers := make([]string, 0, len(pr.AssignedReviewers))
+
+        for _, rid := range pr.AssignedReviewers {
+            if rid == "" {
+                continue
+            }
+
+            if _, isDeact := deactivatedSet[rid]; isDeact {
+                hadDeactivated = true
+                continue
+            }
+
+            user, ok := s.store.GetUserByID(ctx, rid)
+            if !ok || !user.IsActive {
+                hadDeactivated = true
+                continue
+            }
+
+            newReviewers = append(newReviewers, rid)
+        }
+
+        if !hadDeactivated {
+            continue
+        }
+
+        author, ok := s.store.GetUserByID(ctx, pr.AuthorID)
+        if !ok {
+            continue
+        }
+
+        teamMembers, ok := s.store.ListUsersByTeam(ctx, author.TeamName)
+        if !ok {
+            continue
+        }
+
+        candidates := make([]*domain.User, 0, len(teamMembers))
+        for _, u := range teamMembers {
+            if u == nil {
+                continue
+            }
+            if !u.IsActive {
+                continue
+            }
+            if u.ID == author.ID {
+                continue
+            }
+            if containsString(newReviewers, u.ID) {
+                continue
+            }
+            candidates = append(candidates, u)
+        }
+
+        needed := 2 - len(newReviewers)
+        if needed > 0 {
+            picked := s.pickRandomReviewers(candidates, needed)
+            newReviewers = append(newReviewers, picked...)
+        }
+
+        pr.AssignedReviewers = newReviewers
+        s.store.UpdatePullRequest(ctx, pr)
+        updatedPRIDs = append(updatedPRIDs, pr.ID)
+    }
+
+    return &DeactivateTeamResult{
+        TeamName:              teamName,
+        DeactivatedUserIDs:    deactivatedIDs,
+        UpdatedPullRequestIDs: updatedPRIDs,
+    }, nil
+}

@@ -23,6 +23,17 @@ type teamResponse struct {
 	Members  []teamMemberDTO `json:"members"`
 }
 
+type teamDeactivateRequest struct {
+    TeamName string `json:"team_name"`
+}
+
+type teamDeactivateResponse struct {
+    TeamName              string   `json:"team_name"`
+    DeactivatedUserIDs    []string `json:"deactivated_user_ids"`
+    UpdatedPullRequestIDs []string `json:"updated_pull_request_ids"`
+}
+
+
 func (h *Handler) handleTeamAdd(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
@@ -130,4 +141,47 @@ func (h *Handler) handleTeamGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) handleTeamDeactivate(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        methodNotAllowed(w, http.MethodPost)
+        return
+    }
+
+    var req teamDeactivateRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeJSON(w, http.StatusBadRequest, errorResponse{
+            Error: errorBody{
+                Code:    "BAD_REQUEST",
+                Message: "invalid JSON",
+            },
+        })
+        return
+    }
+
+    req.TeamName = strings.TrimSpace(req.TeamName)
+    if req.TeamName == "" {
+        writeJSON(w, http.StatusBadRequest, errorResponse{
+            Error: errorBody{
+                Code:    "BAD_REQUEST",
+                Message: "team_name is required",
+            },
+        })
+        return
+    }
+
+    res, err := h.svc.DeactivateTeamUsersAndReassignOpenPRs(r.Context(), req.TeamName)
+    if err != nil {
+        writeAppError(w, err)
+        return
+    }
+
+    resp := teamDeactivateResponse{
+        TeamName:              res.TeamName,
+        DeactivatedUserIDs:    append([]string(nil), res.DeactivatedUserIDs...),
+        UpdatedPullRequestIDs: append([]string(nil), res.UpdatedPullRequestIDs...),
+    }
+
+    writeJSON(w, http.StatusOK, resp)
 }

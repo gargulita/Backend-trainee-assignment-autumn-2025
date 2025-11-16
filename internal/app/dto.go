@@ -12,3 +12,9 @@ type TeamWithMembers struct {
     Name    string
     Members []*domain.User
 }
+
+type DeactivateTeamResult struct {
+    TeamName              string
+    DeactivatedUserIDs    []string
+    UpdatedPullRequestIDs []string
+}

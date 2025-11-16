@@ -16,6 +16,7 @@ func NewHandler(svc *app.Service) http.Handler {
 
 	mux.HandleFunc("/team/add", h.handleTeamAdd)
 	mux.HandleFunc("/team/get", h.handleTeamGet)
+	mux.HandleFunc("/team/deactivate", h.handleTeamDeactivate)
 
 	mux.HandleFunc("/users/setIsActive", h.handleUserSetIsActive)
 	mux.HandleFunc("/users/getReview", h.handleUserGetReview)
@@ -25,6 +26,9 @@ func NewHandler(svc *app.Service) http.Handler {
 	mux.HandleFunc("/pullRequest/reassign", h.handlePullRequestReassign)
 
 	mux.HandleFunc("/health", h.handleHealth)
+
+	mux.HandleFunc("/stats", h.handleStats)
+
 
 	return mux
 }

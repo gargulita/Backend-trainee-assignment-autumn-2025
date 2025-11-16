@@ -172,3 +172,24 @@ func (s *InMemoryStore) ListPullRequests(_ context.Context) []*domain.PullReques
 	}
 	return res
 }
+
+func (s *InMemoryStore) GetStats(_ context.Context) (*domain.Stats, error) {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+
+    reviewCount := make(map[string]int)
+    statusCount := make(map[domain.PRStatus]int)
+
+    for _, pr := range s.pullRequests {
+        statusCount[pr.Status]++
+
+        for _, reviewer := range pr.AssignedReviewers {
+            reviewCount[reviewer]++
+        }
+    }
+
+    return &domain.Stats{
+        ReviewAssignments: reviewCount,
+        PRStatuses:        statusCount,
+    }, nil
+}

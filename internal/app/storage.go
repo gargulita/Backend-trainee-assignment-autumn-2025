@@ -18,4 +18,6 @@ type Store interface {
     GetPullRequestByID(ctx context.Context, id string) (*domain.PullRequest, bool)
     UpdatePullRequest(ctx context.Context, pr *domain.PullRequest) bool
     ListPullRequests(ctx context.Context) []*domain.PullRequest
+
+     GetStats(ctx context.Context) (*domain.Stats, error)
 }

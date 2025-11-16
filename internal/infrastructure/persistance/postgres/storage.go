@@ -183,3 +183,50 @@ func (s *PostgresStore) ListPullRequests(ctx context.Context) []*domain.PullRequ
     }
     return list
 }
+
+func (s *PostgresStore) GetStats(ctx context.Context) (*domain.Stats, error) {
+    stats := &domain.Stats{
+        ReviewAssignments: make(map[string]int),
+        PRStatuses:        make(map[domain.PRStatus]int),
+    }
+
+    rows, err := s.db.QueryContext(ctx,
+        `SELECT status, COUNT(*) FROM pull_requests GROUP BY status`)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var st string
+        var cnt int
+        if err := rows.Scan(&st, &cnt); err != nil {
+            return nil, err
+        }
+        stats.PRStatuses[domain.PRStatus(st)] = cnt
+    }
+
+    rows2, err := s.db.QueryContext(ctx,
+        `SELECT reviewer, COUNT(*)
+         FROM (
+             SELECT unnest(reviewers) AS reviewer
+             FROM pull_requests
+         ) AS t
+         GROUP BY reviewer`)
+    if err != nil {
+        return nil, err
+    }
+    defer rows2.Close()
+
+    for rows2.Next() {
+        var reviewer string
+        var cnt int
+        if err := rows2.Scan(&reviewer, &cnt); err != nil {
+            return nil, err
+        }
+        stats.ReviewAssignments[reviewer] = cnt
+    }
+
+    return stats, nil
+}
+
